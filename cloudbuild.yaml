@@ -1,0 +1,63 @@
+# War Room Demo — Cloud Build → Cloud Run (project: warroom-498513)
+#
+# NEXT_PUBLIC_API_URL is inlined into the Next.js bundle at BUILD time, so it
+# must be passed as a Docker --build-arg (runtime env on the Cloud Run service is
+# never read by NEXT_PUBLIC_* client code). It comes from the
+# _NEXT_PUBLIC_API_URL substitution: set it on the Cloud Build trigger
+# (Variables) to point the demo at a backend. The default below is the live
+# backend so manual `gcloud builds submit` still works.
+#
+# Other substitutions (_REGION, _REPO, _SERVICE) have defaults that match the
+# existing warroom-repo Artifact Registry; override on the trigger if needed.
+
+substitutions:
+  _REGION: us-central1
+  _REPO: warroom-repo
+  _SERVICE: warroom-demo
+  _NEXT_PUBLIC_API_URL: https://warroom-backend-git-262374983592.us-central1.run.app/api
+
+steps:
+  # Build the container image, baking in the backend URL at build time
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/demo:$COMMIT_SHA'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/demo:latest'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_API_URL=${_NEXT_PUBLIC_API_URL}'
+      - '.'
+
+  # Push the container image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/demo:$COMMIT_SHA']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/demo:latest']
+
+  # Deploy the image to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_SERVICE}'
+      - '--image'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/demo:$COMMIT_SHA'
+      - '--region'
+      - '${_REGION}'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--port'
+      - '3000'
+      # No --set-env-vars: NEXT_PUBLIC_API_URL is baked into the bundle at build
+      # time (see --build-arg above). Any runtime env you set on the Cloud Run
+      # service is preserved across deploys.
+
+images:
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/demo:$COMMIT_SHA'
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/demo:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

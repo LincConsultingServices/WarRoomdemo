@@ -1,0 +1,23 @@
+# Never copy these into the build context — they would clobber the clean
+# `npm ci` install or leak local config into the image.
+node_modules
+.next
+.git
+.gitignore
+
+# Local env / secrets — NEXT_PUBLIC_API_URL is injected via --build-arg instead
+.env*
+
+# Logs, OS junk, editor metadata
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode
+.idea
+
+# Docs / assistant metadata
+README.md
+.claude
+.cursor
