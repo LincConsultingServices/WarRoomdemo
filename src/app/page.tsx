@@ -332,10 +332,19 @@ const StageProgressBar = ({ round, total }: { round: number; total: number }) =>
 };
 
 // ============================================
+// EMAIL GATE
+// ============================================
+const DEMO_EMAIL_KEY = 'warroom_demo_email';
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// ============================================
 // MAIN
 // ============================================
 export default function DemoPage() {
   const [stage, setStage] = useState<DemoStage>('WELCOME');
+  const [email, setEmail] = useState('');
+  const [emailError, setEmailError] = useState('');
+  const [registering, setRegistering] = useState(false);
   const [introduction, setIntroduction] = useState('');
   const [currentRound, setCurrentRound] = useState(1);
   const [scenario, setScenario] = useState<DemoScenario | null>(null);
@@ -367,6 +376,14 @@ export default function DemoPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recognitionRef = useRef<any>(null);
+
+  // Prefill the email from a previous visit
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(DEMO_EMAIL_KEY);
+      if (saved) setEmail(saved);
+    } catch {}
+  }, []);
 
   // Recording timer
   useEffect(() => {
@@ -572,6 +589,37 @@ export default function DemoPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Lead capture, not security: only a 400 blocks entry; network/5xx/429 still let the visitor in.
+  const handleStartDemo = async () => {
+    const trimmed = email.trim();
+    if (!EMAIL_RE.test(trimmed)) {
+      setEmailError('Please enter a valid email address.');
+      return;
+    }
+    setEmailError('');
+    setRegistering(true);
+    try {
+      const res = await fetch(`${API_BASE}/demo/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: trimmed }),
+        signal: AbortSignal.timeout(6000),
+      });
+      if (res.status === 400) {
+        const data = await res.json().catch(() => null);
+        setEmailError(data?.error || 'Please enter a valid email address.');
+        return;
+      }
+    } catch {
+      // Network failure: let the visitor in anyway.
+    } finally {
+      setRegistering(false);
+    }
+    try { localStorage.setItem(DEMO_EMAIL_KEY, trimmed); } catch {}
+    setStage('INTRODUCTION');
+    window.scrollTo(0, 0);
   };
 
   const handleRestart = () => {
@@ -897,11 +945,36 @@ export default function DemoPage() {
                   <span key={i} className="px-3 py-1.5 rounded-lg text-xs font-medium glass-card-light">{s}</span>
                 ))}
               </div>
-              <button onClick={() => setStage('INTRODUCTION')}
-                className="px-10 py-4 rounded-2xl text-lg font-bold text-white shadow-2xl transition-all hover:scale-105 active:scale-95 animate-glow"
-                style={{ background: 'linear-gradient(135deg, #7c3aed, #f59e0b)' }}>
-                Start the Demo
-              </button>
+              <form
+                onSubmit={e => { e.preventDefault(); handleStartDemo(); }}
+                noValidate
+                className="w-full max-w-md flex flex-col items-center">
+                <div className="glass-card p-4 w-full mb-4 text-left">
+                  <label htmlFor="demo-email" className="block text-xs font-semibold text-gray-400 mb-2">
+                    Your email to enter the demo
+                  </label>
+                  <input
+                    id="demo-email"
+                    type="email"
+                    autoComplete="email"
+                    required
+                    value={email}
+                    onChange={e => { setEmail(e.target.value); if (emailError) setEmailError(''); }}
+                    placeholder="you@company.com"
+                    className="demo-textarea"
+                  />
+                  <p className="text-xs text-gray-500 mt-2">No account needed.</p>
+                </div>
+
+                {emailError && <div className="w-full text-sm text-red-400 mb-4 p-3 rounded-xl text-left" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>{emailError}</div>}
+
+                <button type="submit" disabled={registering}
+                  className="px-10 py-4 rounded-2xl text-lg font-bold text-white shadow-2xl transition-all hover:scale-105 active:scale-95 animate-glow disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
+                  style={{ background: 'linear-gradient(135deg, #7c3aed, #f59e0b)' }}>
+                  {registering && <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                  Start the Demo
+                </button>
+              </form>
             </div>
           )}
 
